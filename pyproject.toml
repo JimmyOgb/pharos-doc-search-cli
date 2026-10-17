@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pharos-doc-search-cli"
+version = "1.0.0"
+description = "Fast, zero-dependency CLI wrapper on top of the Pharos Developer Docs MCP interface"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "JimmyOgb", email = "builder@pharos.xyz" }
+]
+keywords = ["pharos", "docs", "mcp", "cli", "ai-agent", "blockchain"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = []
+
+[project.scripts]
+pharos-docs = "pharos_docs.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pharos_docs*"]
