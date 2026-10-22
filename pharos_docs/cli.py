@@ -1,18 +1,40 @@
 """
 Pharos Doc-Search CLI Entry Point
-Provides a terminal command-line interface for querying Pharos Developer Docs.
+Provides a terminal command-line interface for querying Pharos Developer Docs via Developer Docs MCP.
 
 Usage:
     pharos-docs "How do I deploy a contract?"
     python -m pharos_docs.cli "What is the Atlantic testnet chain ID?"
     pharos-docs --json "How to use Pharos MCP?"
+    pharos-docs --search "Atlantic RPC"
+    pharos-docs --list-tools
 """
 
 import sys
 import json
 import argparse
 from typing import Optional, List
-from .client import PharosDocsClient, DEFAULT_DOCS_ENDPOINT, DEFAULT_GOAL, DEFAULT_TIMEOUT
+from .client import (
+    PharosDocsMCPClient,
+    PharosDocsClient,
+    DEFAULT_DOCS_MCP_ENDPOINT,
+    DEFAULT_DOCS_ENDPOINT,
+    DEFAULT_GOAL,
+    DEFAULT_TIMEOUT,
+)
+
+# Configure UTF-8 encoding on Windows consoles where possible to prevent charmap errors on Unicode docs
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 # ANSI terminal colors (gracefully ignored if not supported or disabled)
 CYAN = "\033[36m"
@@ -76,7 +98,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     """CLI execution entrypoint."""
     parser = argparse.ArgumentParser(
         prog="pharos-docs",
-        description="Query Pharos Developer Docs via official GitBook agentic API."
+        description="Query Pharos Developer Docs via official Developer Docs MCP server."
     )
     parser.add_argument(
         "query",
@@ -94,8 +116,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--endpoint",
         type=str,
-        default=DEFAULT_DOCS_ENDPOINT,
-        help=f"Base documentation endpoint (default: '{DEFAULT_DOCS_ENDPOINT}')."
+        default=DEFAULT_DOCS_MCP_ENDPOINT,
+        help=f"Base documentation MCP endpoint (default: '{DEFAULT_DOCS_MCP_ENDPOINT}')."
     )
     parser.add_argument(
         "--timeout",
@@ -120,15 +142,85 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Maximum number of source references to display (default: 5)."
     )
     parser.add_argument(
+        "--search",
+        type=str,
+        default=None,
+        help="Explicitly query using the searchDocumentation MCP tool."
+    )
+    parser.add_argument(
+        "--page",
+        type=str,
+        default=None,
+        help="Fetch full markdown page content using the getPage MCP tool."
+    )
+    parser.add_argument(
+        "--list-tools",
+        action="store_true",
+        help="Discover and display available tools on the Developer Docs MCP server."
+    )
+    parser.add_argument(
         "--version",
         action="version",
-        version="pharos-docs 1.0.0",
+        version="pharos-docs 2.0.0",
         help="Show version and exit."
     )
 
     args = parser.parse_args(argv)
 
-    # Allow reading query from stdin if '-' is passed as argument
+    client = PharosDocsMCPClient(
+        endpoint=args.endpoint,
+        timeout=args.timeout
+    )
+
+    # 1. Discover tools command
+    if args.list_tools:
+        try:
+            client.initialize()
+            tools = client.list_tools()
+            if args.json:
+                print(json.dumps({
+                    "serverInfo": client.server_info,
+                    "tools": tools
+                }, indent=2))
+            else:
+                s_name = client.server_info.get("name", "Docs MCP") if client.server_info else "Docs MCP"
+                print(f"=== Pharos Developer Docs MCP Tools ({s_name}) ===")
+                for t in tools:
+                    print(f"- {t['name']}: {t.get('description', '').strip()[:100]}...")
+            return 0
+        except Exception as e:
+            print(f"[Doc-Search Error] {e}", file=sys.stderr)
+            return 1
+
+    # 2. Get full page content
+    if args.page:
+        try:
+            res = client.get_page(args.page)
+            if args.json:
+                print(json.dumps(res, indent=2))
+            else:
+                print(f"=== Pharos Docs Page ({res['elapsed_seconds']}s) ===")
+                print(res["answer"])
+            return 0
+        except Exception as e:
+            print(f"[Doc-Search Error] {e}", file=sys.stderr)
+            return 1
+
+    # 3. Explicit search mode
+    if args.search:
+        try:
+            res = client.search_documentation(args.search)
+            if args.json:
+                print(json.dumps(res, indent=2))
+            else:
+                print(f"=== Pharos Docs Search Results: '{args.search}' ({res['elapsed_seconds']}s) ===")
+                print(res["answer"])
+            return 0
+        except Exception as e:
+            print(f"[Doc-Search Error] {e}", file=sys.stderr)
+            return 1
+
+    # 4. Standard question query (positional or stdin)
     query_text = args.query
     if query_text == "-":
         query_text = sys.stdin.read().strip()
@@ -136,11 +228,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not query_text:
         parser.print_help(sys.stderr)
         return 1
-
-    client = PharosDocsClient(
-        endpoint=args.endpoint,
-        timeout=args.timeout
-    )
 
     result = client.query(query_text, args.goal)
 

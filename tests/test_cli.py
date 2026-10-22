@@ -5,6 +5,7 @@ import io
 import sys
 
 from pharos_docs.cli import main, format_terminal_output
+from pharos_docs.client import DEFAULT_DOCS_MCP_ENDPOINT
 
 
 class TestPharosDocsCLI(unittest.TestCase):
@@ -44,13 +45,13 @@ class TestPharosDocsCLI(unittest.TestCase):
         self.assertIn("[Notice: No Good Answer Found in Official Docs]", output)
         self.assertIn("I cannot find a chocolate chip cookie recipe in the docs.", output)
 
-    @patch("pharos_docs.client.PharosDocsClient.query")
+    @patch("pharos_docs.client.PharosDocsMCPClient.query")
     def test_cli_success_exit_code_and_output(self, mock_query):
         mock_query.return_value = {
             "success": True,
             "query": "How to deploy?",
             "goal": "deploy",
-            "endpoint": "https://docs.pharos.xyz/index.md",
+            "endpoint": DEFAULT_DOCS_MCP_ENDPOINT,
             "http_status": 200,
             "elapsed_seconds": 5.0,
             "answer": "Deploy with Foundry.",
@@ -69,13 +70,13 @@ class TestPharosDocsCLI(unittest.TestCase):
         output = captured_stdout.getvalue()
         self.assertIn("Deploy with Foundry.", output)
 
-    @patch("pharos_docs.client.PharosDocsClient.query")
+    @patch("pharos_docs.client.PharosDocsMCPClient.query")
     def test_cli_json_output(self, mock_query):
         mock_query.return_value = {
             "success": True,
             "query": "What is chain ID?",
             "goal": "test",
-            "endpoint": "https://docs.pharos.xyz/index.md",
+            "endpoint": DEFAULT_DOCS_MCP_ENDPOINT,
             "http_status": 200,
             "elapsed_seconds": 3.2,
             "answer": "688689",
@@ -95,13 +96,13 @@ class TestPharosDocsCLI(unittest.TestCase):
         self.assertEqual(data["answer"], "688689")
         self.assertTrue(data["has_answer"])
 
-    @patch("pharos_docs.client.PharosDocsClient.query")
+    @patch("pharos_docs.client.PharosDocsMCPClient.query")
     def test_cli_no_answer_exit_code(self, mock_query):
         mock_query.return_value = {
             "success": True,
             "query": "baking cookies",
             "goal": "test",
-            "endpoint": "https://docs.pharos.xyz/index.md",
+            "endpoint": DEFAULT_DOCS_MCP_ENDPOINT,
             "http_status": 200,
             "elapsed_seconds": 4.1,
             "answer": "cannot find a cookie recipe",
@@ -120,13 +121,13 @@ class TestPharosDocsCLI(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         self.assertIn("Notice: No Good Answer Found", captured_stdout.getvalue())
 
-    @patch("pharos_docs.client.PharosDocsClient.query")
+    @patch("pharos_docs.client.PharosDocsMCPClient.query")
     def test_cli_error_exit_code(self, mock_query):
         mock_query.return_value = {
             "success": False,
             "query": "test query",
             "goal": "test",
-            "endpoint": "https://docs.pharos.xyz/index.md",
+            "endpoint": DEFAULT_DOCS_MCP_ENDPOINT,
             "http_status": 500,
             "elapsed_seconds": 1.0,
             "answer": "",
@@ -149,6 +150,43 @@ class TestPharosDocsCLI(unittest.TestCase):
         with patch("sys.stderr", captured_stderr):
             exit_code = main([])
         self.assertEqual(exit_code, 1)
+
+    @patch("pharos_docs.client.PharosDocsMCPClient.list_tools")
+    @patch("pharos_docs.client.PharosDocsMCPClient.initialize")
+    def test_cli_list_tools(self, mock_init, mock_list):
+        mock_init.return_value = {}
+        mock_list.return_value = [
+            {"name": "askQuestion", "description": "Ask question tool"},
+            {"name": "searchDocumentation", "description": "Search docs tool"},
+        ]
+
+        captured_stdout = io.StringIO()
+        with patch("sys.stdout", captured_stdout):
+            exit_code = main(["--list-tools"])
+        self.assertEqual(exit_code, 0)
+        output = captured_stdout.getvalue()
+        self.assertIn("askQuestion", output)
+        self.assertIn("searchDocumentation", output)
+
+    @patch("pharos_docs.client.PharosDocsMCPClient.search_documentation")
+    def test_cli_search_command(self, mock_search):
+        mock_search.return_value = {
+            "success": True,
+            "tool": "searchDocumentation",
+            "query": "Atlantic RPC",
+            "elapsed_seconds": 0.5,
+            "answer": "Title: Atlantic Testnet\nLink: https://docs.pharos.xyz/getting-started/network/atlantic-testnet",
+            "has_answer": True,
+            "sources": [],
+            "follow_ups": []
+        }
+
+        captured_stdout = io.StringIO()
+        with patch("sys.stdout", captured_stdout):
+            exit_code = main(["--search", "Atlantic RPC"])
+        self.assertEqual(exit_code, 0)
+        output = captured_stdout.getvalue()
+        self.assertIn("Atlantic Testnet", output)
 
 
 if __name__ == "__main__":
